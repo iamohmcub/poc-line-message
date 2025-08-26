@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -16,12 +15,32 @@ import (
 	"github.com/skip2/go-qrcode"
 )
 
-/* ---------- โมเดล/สโตร์แบบ in-memory ---------- */
+/* ===================== Config ===================== */
+
+type Config struct {
+	Port          string `envconfig:"PORT"`
+	ChannelSecret string `envconfig:"LINE_CHANNEL_SECRET"`
+	ChannelToken  string `envconfig:"LINE_CHANNEL_TOKEN"`
+}
+
+var cfg Config
+
+func init() {
+	_ = godotenv.Load() // โหลด .env ถ้ามี
+	if err := envconfig.Process("", &cfg); err != nil {
+		log.Fatalf("read env error : %s", err.Error())
+	}
+	if cfg.Port == "" {
+		cfg.Port = "3000"
+	}
+}
+
+/* ===================== In-memory store (เดโม่) ===================== */
 
 type Session struct {
 	UserID        string
-	CheckIn       string // "YYYY-MM-DD"
-	CheckOut      string // "YYYY-MM-DD"
+	CheckIn       string
+	CheckOut      string
 	Guests        int
 	Rooms         int
 	RoomType      string
@@ -39,7 +58,7 @@ var roomPrices = map[string]int{
 	"The Serenity Resort": 3200,
 }
 
-/* ---------- Utilities ---------- */
+/* ===================== Utils ===================== */
 
 func mustFlex(jsonStr string) linebot.FlexContainer {
 	var raw json.RawMessage = json.RawMessage(jsonStr)
@@ -57,24 +76,6 @@ func qrOptions(options []string) *linebot.QuickReplyItems {
 		btns = append(btns, linebot.NewQuickReplyButton("", linebot.NewMessageAction(o, o)))
 	}
 	return linebot.NewQuickReplyItems(btns...)
-}
-
-func reply(bot *linebot.Client, token string, msgs ...linebot.SendingMessage) {
-	if token == "" {
-		return
-	}
-	if _, err := bot.ReplyMessage(token, msgs...).Do(); err != nil {
-		log.Println("reply error:", err)
-	}
-}
-
-func push(bot *linebot.Client, to string, msgs ...linebot.SendingMessage) {
-	if to == "" {
-		return
-	}
-	if _, err := bot.PushMessage(to, msgs...).Do(); err != nil {
-		log.Println("push error:", err)
-	}
 }
 
 func nightsBetween(checkIn, checkOut string) int {
@@ -102,7 +103,7 @@ func buttonsDatePicker(alt, title, data string) *linebot.TemplateMessage {
 	return linebot.NewTemplateMessage(alt, tpl)
 }
 
-/* ---------- สร้าง Flex ---------- */
+/* ===================== Flex messages ===================== */
 
 func roomCarousel() linebot.SendingMessage {
 	j := `{
@@ -117,7 +118,10 @@ func roomCarousel() linebot.SendingMessage {
 	        { "type":"text","text":"รีสอร์ทบรรยากาศสงบ เหมาะกับการพักผ่อน","size":"sm","color":"#666666","wrap":true }
 	      ]},
 	      "footer": { "type":"box","layout":"vertical","spacing":"sm","contents":[
-	        { "type":"button","style":"primary","color":"#111827","action":{"type":"postback","label":"เลือก","data":"flow=book&action=pick_room_type&room=The Serenity Resort","displayText":"เลือก The Serenity Resort"} }
+	        { "type":"button","style":"primary","color":"#111827",
+	          "action":{"type":"postback","label":"เลือก",
+	            "data":"flow=book&action=pick_room_type&room=The Serenity Resort",
+	            "displayText":"เลือก The Serenity Resort"} }
 	      ]}
 	    },
 	    {
@@ -129,7 +133,10 @@ func roomCarousel() linebot.SendingMessage {
 	        { "type":"text","text":"วิลล่าริมทะเลพร้อมวิวส่วนตัว","size":"sm","color":"#666666","wrap":true }
 	      ]},
 	      "footer": { "type":"box","layout":"vertical","spacing":"sm","contents":[
-	        { "type":"button","style":"primary","color":"#111827","action":{"type":"postback","label":"เลือก","data":"flow=book&action=pick_room_type&room=Ocean Breeze Villa","displayText":"เลือก Ocean Breeze Villa"} }
+	        { "type":"button","style":"primary","color":"#111827",
+	          "action":{"type":"postback","label":"เลือก",
+	            "data":"flow=book&action=pick_room_type&room=Ocean Breeze Villa",
+	            "displayText":"เลือก Ocean Breeze Villa"} }
 	      ]}
 	    },
 	    {
@@ -141,7 +148,10 @@ func roomCarousel() linebot.SendingMessage {
 	        { "type":"text","text":"ห้องวิวทะเล ราคาคุ้มค่า","size":"sm","color":"#666666","wrap":true }
 	      ]},
 	      "footer": { "type":"box","layout":"vertical","spacing":"sm","contents":[
-	        { "type":"button","style":"primary","color":"#111827","action":{"type":"postback","label":"เลือก","data":"flow=book&action=pick_room_type&room=Deluxe Sea View","displayText":"เลือก Deluxe Sea View"} }
+	        { "type":"button","style":"primary","color":"#111827",
+	          "action":{"type":"postback","label":"เลือก",
+	            "data":"flow=book&action=pick_room_type&room=Deluxe Sea View",
+	            "displayText":"เลือก Deluxe Sea View"} }
 	      ]}
 	    }
 	  ]
@@ -202,34 +212,18 @@ func summaryCard(s *Session) linebot.SendingMessage {
 	return linebot.NewTextMessage("สรุปการจอง")
 }
 
-/* ---------- main ---------- */
+/* ===================== main ===================== */
 
-type Config struct {
-	Port          string `envconfig:"PORT"`
-	ChannelSecret string `envconfig:"LINE_CHANNEL_SECRET"`
-	ChannelToken  string `envconfig:"LINE_CHANNEL_TOKEN"`
-}
-
-var cfg Config
-
-func init() {
-	_ = godotenv.Load()
-	if err := envconfig.Process("", &cfg); err != nil {
-		log.Fatalf("read env error : %s", err.Error())
-	}
-}
 func main() {
-	secret := cfg.ChannelSecret
-	token := cfg.ChannelToken
-	if secret == "" || token == "" {
-		log.Fatal("set CHANNEL_SECRET and CHANNEL_TOKEN")
+	if cfg.ChannelSecret == "" || cfg.ChannelToken == "" {
+		log.Fatal("missing LINE_CHANNEL_SECRET or LINE_CHANNEL_TOKEN")
 	}
-	bot, err := linebot.New(secret, token)
+	bot, err := linebot.New(cfg.ChannelSecret, cfg.ChannelToken)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	// เสิร์ฟ QR (เดโม่)
+	// เสิร์ฟ QR (เดโม่) — ใช้สำหรับตอบกลับเป็นรูปในขั้น “ชำระเงิน”
 	http.HandleFunc("/qr/", func(w http.ResponseWriter, r *http.Request) {
 		rid := strings.TrimPrefix(r.URL.Path, "/qr/")
 		s := reservations[rid]
@@ -238,7 +232,7 @@ func main() {
 			return
 		}
 		payload := fmt.Sprintf("PROMPTPAY-DEMO|RID=%s|AMOUNT=%d", rid, s.AmountTHB)
-		png, _ := qrcode.Encode(payload, qrcode.Medium, 256)
+		png, _ := goqrcodeEncode(payload, 256)
 		w.Header().Set("Content-Type", "image/png")
 		w.Write(png)
 	})
@@ -267,27 +261,32 @@ func main() {
 			case linebot.EventTypeMessage:
 				switch m := ev.Message.(type) {
 				case *linebot.ImageMessage:
-					// รับสลิป → ปิดงานเป็น paid (เดโม่)
+					// รับสลิป -> ปิดงานเป็น paid (เดโม่)
 					s := sessions[userID]
 					if s != nil && s.Status == "waiting_payment" {
 						s.Status = "paid"
-						reply(bot, ev.ReplyToken, linebot.NewTextMessage("✅ รับสลิปแล้ว ขอบคุณครับ! การจองของคุณยืนยันเรียบร้อย 🎉"))
+						_, _ = bot.ReplyMessage(ev.ReplyToken,
+							linebot.NewTextMessage("✅ รับสลิปแล้ว ยืนยันการจองเรียบร้อย 🎉"),
+						).Do()
 					} else {
-						reply(bot, ev.ReplyToken, linebot.NewTextMessage("ส่งรูปมาแล้วครับ"))
+						_, _ = bot.ReplyMessage(ev.ReplyToken,
+							linebot.NewTextMessage("รับรูปแล้วครับ"),
+						).Do()
 					}
 
 				case *linebot.TextMessage:
 					text := strings.TrimSpace(m.Text)
 					lower := strings.ToLower(text)
 
+					// เริ่มต้น
 					if lower == "เมนู" || lower == "start" || strings.Contains(lower, "จองห้อง") {
-						msg := linebot.NewTextMessage("เริ่มจองห้อง: เลือกวันที่เช็คอิน")
-						msg = msg.WithQuickReplies(qrOptions([]string{"เมนู", "ติดต่อโรงแรม"})).(*linebot.TextMessage)
-						reply(bot, ev.ReplyToken, buttonsDatePicker("เลือกเช็คอิน", "คุณต้องการเช็คอินวันไหน?", "flow=book&action=checkin"))
+						_, _ = bot.ReplyMessage(ev.ReplyToken,
+							buttonsDatePicker("เลือกเช็คอิน", "คุณต้องการเช็คอินวันไหน?", "flow=book&action=checkin"),
+						).Do()
 						continue
 					}
 
-					// เลือกจำนวนผู้เข้าพัก (จากข้อความ)
+					// ผู้เข้าพัก: "N คน"
 					if strings.HasSuffix(text, " คน") {
 						num := strings.TrimSuffix(text, " คน")
 						if n, err := strconv.Atoi(strings.TrimSpace(num)); err == nil {
@@ -299,28 +298,32 @@ func main() {
 								for i := 1; i <= 3; i++ {
 									opts = append(opts, fmt.Sprintf("%d ห้อง", i))
 								}
-								reply(bot, ev.ReplyToken, linebot.NewTextMessage("ต้องการกี่ห้อง?").WithQuickReplies(qrOptions(opts)))
+								_, _ = bot.ReplyMessage(ev.ReplyToken,
+									linebot.NewTextMessage("ต้องการกี่ห้อง?").WithQuickReplies(qrOptions(opts)),
+								).Do()
 								continue
 							}
 						}
 					}
 
-					// เลือกจำนวนห้อง (จากข้อความ)
+					// จำนวนห้อง: "N ห้อง"
 					if strings.HasSuffix(text, " ห้อง") {
 						num := strings.TrimSuffix(text, " ห้อง")
 						if n, err := strconv.Atoi(strings.TrimSpace(num)); err == nil {
 							s := sessions[userID]
 							if s != nil && s.CheckIn != "" && s.CheckOut != "" && s.Guests > 0 {
 								s.Rooms = n
-								// ส่งคาโรเซลให้เลือกประเภทห้อง
-								reply(bot, ev.ReplyToken, roomCarousel())
+								// ตอบเป็นคาโรเซลให้เลือกประเภทห้อง
+								_, _ = bot.ReplyMessage(ev.ReplyToken, roomCarousel()).Do()
 								continue
 							}
 						}
 					}
 
-					// ไม่รู้จักคำสั่ง → ชี้แนะ
-					reply(bot, ev.ReplyToken, linebot.NewTextMessage("พิมพ์ “เมนู” เพื่อเริ่มจองห้อง 😀"))
+					// ไม่รู้จัก → ชี้แนะ
+					_, _ = bot.ReplyMessage(ev.ReplyToken,
+						linebot.NewTextMessage("พิมพ์ “เมนู” เพื่อเริ่มจองห้อง 😀"),
+					).Do()
 				}
 
 			case linebot.EventTypePostback:
@@ -330,15 +333,17 @@ func main() {
 					date = ev.Postback.Params.Date
 				}
 
-				// เริ่มจอง: เช็คอิน
+				// เช็คอิน
 				if strings.Contains(data, "flow=book&action=checkin") && date != "" {
 					if sessions[userID] == nil {
 						sessions[userID] = &Session{UserID: userID, Status: "pending"}
 					}
 					sessions[userID].CheckIn = date
-					// ขอเช็คเอาท์
-					push(bot, userID, linebot.NewTextMessage("คุณเลือกเช็คอิน: "+date+"\nต่อไปเลือกวันที่เช็คเอาท์"))
-					push(bot, userID, buttonsDatePicker("เลือกเช็คเอาท์", "คุณต้องการเช็คเอาท์วันไหน?", "flow=book&action=checkout"))
+					// ตอบกลับ: แจ้งเช็คอิน + ขอเช็คเอาท์
+					_, _ = bot.ReplyMessage(ev.ReplyToken,
+						linebot.NewTextMessage("คุณเลือกเช็คอิน: "+date+"\nต่อไปเลือกวันที่เช็คเอาท์"),
+						buttonsDatePicker("เลือกเช็คเอาท์", "คุณต้องการเช็คเอาท์วันไหน?", "flow=book&action=checkout"),
+					).Do()
 					continue
 				}
 
@@ -346,17 +351,18 @@ func main() {
 				if strings.Contains(data, "flow=book&action=checkout") && date != "" {
 					s := sessions[userID]
 					if s == nil {
-						continue
+						break
 					}
 					s.CheckOut = date
-					push(bot, userID, linebot.NewTextMessage("เช็คเอาท์: "+date))
-
-					// ถามผู้เข้าพัก (Quick Reply)
+					// ตอบกลับ: แจ้งเช็คเอาท์ + Quick Reply จำนวนผู้เข้าพัก
 					var opts []string
 					for i := 1; i <= 4; i++ {
 						opts = append(opts, fmt.Sprintf("%d คน", i))
 					}
-					push(bot, userID, linebot.NewTextMessage("จำนวนผู้เข้าพัก?").WithQuickReplies(qrOptions(opts)))
+					_, _ = bot.ReplyMessage(ev.ReplyToken,
+						linebot.NewTextMessage("เช็คเอาท์: "+date),
+						linebot.NewTextMessage("จำนวนผู้เข้าพัก?").WithQuickReplies(qrOptions(opts)),
+					).Do()
 					continue
 				}
 
@@ -364,13 +370,12 @@ func main() {
 				if strings.Contains(data, "flow=book&action=pick_room_type") {
 					s := sessions[userID]
 					if s == nil {
-						continue
+						break
 					}
-					// ดึงชื่อห้องจาก data
 					if strings.Contains(data, "room=") {
 						room := data[strings.Index(data, "room=")+5:]
 						s.RoomType = room
-						// คำนวณราคา & ออกเลขจอง
+						// คำนวณราคา + ออกเลขจอง
 						n := nightsBetween(s.CheckIn, s.CheckOut)
 						if n <= 0 {
 							n = 1
@@ -378,23 +383,23 @@ func main() {
 						s.AmountTHB = price(s.RoomType, n, s.Rooms)
 						s.ReservationID = fmt.Sprintf("R-%d", time.Now().UnixNano())
 						reservations[s.ReservationID] = s
-						// แสดงสรุป
-						reply(bot, ev.ReplyToken, summaryCard(s))
+						_, _ = bot.ReplyMessage(ev.ReplyToken, summaryCard(s)).Do()
 					}
 					continue
 				}
 
-				// ชำระเงิน -> ส่ง QR + set waiting_payment
 				if strings.Contains(data, "flow=pay&rid=") {
 					rid := data[strings.Index(data, "rid=")+4:]
 					s := reservations[rid]
 					if s == nil {
-						continue
+						break
 					}
 					s.Status = "waiting_payment"
 					qrURL := fmt.Sprintf("https://%s/qr/%s", r.Host, rid)
-					push(bot, userID, linebot.NewImageMessage(qrURL, qrURL))
-					push(bot, userID, linebot.NewTextMessage("สแกน QR เพื่อชำระเงิน แล้วอัปโหลดสลิปในแชตนี้ได้เลยครับ"))
+					_, _ = bot.ReplyMessage(ev.ReplyToken,
+						linebot.NewImageMessage(qrURL, qrURL),
+						linebot.NewTextMessage("สแกน QR เพื่อชำระเงิน แล้วอัปโหลดสลิปในแชตนี้ได้เลยครับ"),
+					).Do()
 					continue
 				}
 
@@ -404,7 +409,7 @@ func main() {
 					if s := reservations[rid]; s != nil {
 						s.Status = "cancelled"
 					}
-					reply(bot, ev.ReplyToken, linebot.NewTextMessage("ยกเลิกการจองแล้วครับ"))
+					_, _ = bot.ReplyMessage(ev.ReplyToken, linebot.NewTextMessage("ยกเลิกการจองแล้วครับ")).Do()
 					continue
 				}
 			}
@@ -414,10 +419,11 @@ func main() {
 		w.Write([]byte("OK"))
 	})
 
-	port := os.Getenv("PORT")
-	if port == "" {
-		port = "3000"
-	}
-	log.Println("listening on :" + port)
-	log.Fatal(http.ListenAndServe(":"+port, nil))
+	log.Println("listening on :" + cfg.Port)
+	log.Fatal(http.ListenAndServe(":"+cfg.Port, nil))
+}
+
+/* ===== helper for QR encode (ลด import name clash) ===== */
+func goqrcodeEncode(payload string, size int) ([]byte, error) {
+	return qrcode.Encode(payload, qrcode.Medium, size)
 }

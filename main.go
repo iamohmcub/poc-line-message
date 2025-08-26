@@ -3,9 +3,10 @@ package main
 import (
 	"log"
 	"net/http"
-	"os"
 	"strings"
 
+	"github.com/joho/godotenv"
+	"github.com/kelseyhightower/envconfig"
 	"github.com/line/line-bot-sdk-go/v7/linebot"
 )
 
@@ -18,9 +19,24 @@ func qrOptions(options []string) *linebot.QuickReplyItems {
 	return linebot.NewQuickReplyItems(btns...)
 }
 
+type Config struct {
+	Port          string `envconfig:"PORT"`
+	ChannelSecret string `envconfig:"CHANNEL_SECRET"`
+	ChannelToken  string `envconfig:"CHANNEL_TOKEN"`
+}
+
+var cfg Config
+
+func init() {
+	_ = godotenv.Load()
+	if err := envconfig.Process("", &cfg); err != nil {
+		log.Fatalf("read env error : %s", err.Error())
+	}
+}
+
 func main() {
-	secret := os.Getenv("CHANNEL_SECRET")
-	token := os.Getenv("CHANNEL_TOKEN")
+	secret := cfg.ChannelSecret
+	token := cfg.ChannelToken
 	if secret == "" || token == "" {
 		log.Fatal("set env CHANNEL_SECRET and CHANNEL_TOKEN first")
 	}
@@ -83,7 +99,7 @@ func main() {
 		w.Write([]byte("OK"))
 	})
 
-	port := os.Getenv("PORT")
+	port := cfg.Port
 	if port == "" {
 		port = "3000"
 	}

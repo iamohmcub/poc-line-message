@@ -21,8 +21,8 @@ func qrOptions(options []string) *linebot.QuickReplyItems {
 
 type Config struct {
 	Port          string `envconfig:"PORT"`
-	ChannelSecret string `envconfig:"CHANNEL_SECRET"`
-	ChannelToken  string `envconfig:"CHANNEL_TOKEN"`
+	ChannelSecret string `envconfig:"LINE_CHANNEL_SECRET"`
+	ChannelToken  string `envconfig:"LINE_CHANNEL_TOKEN"`
 }
 
 var cfg Config

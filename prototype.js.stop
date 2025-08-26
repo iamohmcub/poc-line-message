@@ -1,0 +1,1266 @@
+const express = require('express');
+const bodyParser = require('body-parser');
+const { Client } = require('@line/bot-sdk');
+
+// ตั้งค่าการเชื่อมต่อกับ LINE API
+const client = new Client({
+    channelAccessToken: 'OBl0VxxX43CjHrhrWrm5MU0ECN0TmyAaPebW7ZbmKfUbHwcPsfGhzIxMZ/7x7xcDWYP1Y17A7VhwOZkKCjlv7KqUUt604LAssC6b1rvq5/h4QSMmrcSkF3T1kYcQOpuzxQNCkbIwsTKdLPd8eY7/8wdB04t89/1O/w1cDnyilFU=',
+    channelSecret: '78b63d2c720ca2cd2b1d7c9b7bfb0cb4',
+});
+
+const app = express();
+const port = process.env.PORT || 3000;
+
+app.use(bodyParser.json());
+
+// Webhook endpoint รับข้อมูลจาก LINE OA
+app.post('/webhook', async (req, res) => {
+    try {
+
+
+        const events = req.body.events;
+
+        for (const event of events) {
+            const userId = event.source.userId;
+            console.log("userId", userId)
+            console.log("type", event.type)
+            if (event.type === 'message' && event.message.type === 'image') {
+                const messageId = event.message.id;
+                console.log("message", event.message.text)
+
+                try {
+                    // ดึง binary content ของรูปจาก LINE
+                    // const stream = await client.getMessageContent(messageId);
+
+                    // // สร้างไฟล์ชื่อแบบสุ่ม/มี timestamp
+                    // const filename = `upload_${userId}_${Date.now()}.jpg`;
+                    // const filepath = path.join(__dirname, 'uploads', filename);
+
+                    // // แน่ใจว่าโฟลเดอร์ uploads มีอยู่
+                    // fs.mkdirSync(path.dirname(filepath), { recursive: true });
+
+                    // // เขียน stream ลงไฟล์
+                    // const writable = fs.createWriteStream(filepath);
+                    // stream.pipe(writable);
+
+                    // await new Promise((resolve, reject) => {
+                    //     writable.on('finish', resolve);
+                    //     writable.on('error', reject);
+                    // });
+
+                    // ส่งข้อความยืนยันการจอง
+                    await client.replyMessage(event.replyToken, {
+                        type: 'text',
+                        text: '✅ จองสำเร็จแล้ว! ขอบคุณที่ส่งรูปมาเป็นหลักฐานค่ะ',
+                    });
+
+                    console.log(`Saved image to ${filepath}`);
+                } catch (err) {
+                    console.error('Error handling image message:', err);
+                    await client.replyMessage(event.replyToken, {
+                        type: 'text',
+                        text: 'เกิดข้อผิดพลาดในการรับรูปภาพ ลองใหม่อีกครั้งครับ',
+                    });
+                }
+            }
+
+            if (event.type === 'message' && event.message.type === 'text') {
+                const msg = event.message.text;
+                console.log("msg", msg)
+
+                if (msg.toLowerCase().includes('จองห้อง')) {
+                    // ส่ง datetime picker กลับ
+                    const reply = {
+                        type: 'template',
+                        altText: 'เลือกวันที่เช็คอิน',
+                        template: {
+                            type: 'buttons',
+                            text: 'คุณต้องการเช็คอินวันไหน?',
+                            actions: [
+                                {
+                                    type: 'datetimepicker',
+                                    label: 'เลือกวันที่',
+                                    data: 'action=checkin',
+                                    mode: 'date',
+                                }
+                            ]
+                        }
+                    };
+
+                    await client.replyMessage(event.replyToken, reply);
+                } else if (msg === "เลือกวันที่ที่ใช่"){
+                    const reply = {
+                        type: 'template',
+                        altText: 'เลือกวันที่เช็คอิน',
+                        template: {
+                            type: 'buttons',
+                            text: 'คุณต้องการเช็คอินวันไหน?',
+                            actions: [
+                                {
+                                    type: 'datetimepicker',
+                                    label: 'เลือกวันที่',
+                                    data: 'action=checkin_by_date',
+                                    mode: 'date',
+                                }
+                            ]
+                        }
+                    };
+
+                    //  await client.pushMessage(userId, {
+                    //     type: 'template',
+                    //     altText: 'เลือกวันที่เช็คอิน',
+                    //     template: {
+                    //         type: 'buttons',
+                    //         text: 'คุณต้องการเช็คอินวันไหน?',
+                    //         actions: [
+                    //             {
+                    //                 type: 'datetimepicker',
+                    //                 label: 'เลือกวันที่',
+                    //                 data: 'action=checkin_by_date',
+                    //                 mode: 'date',
+                    //             }
+                    //         ]
+                    //     }
+                    // });
+
+
+                    await client.replyMessage(event.replyToken, reply);
+                } else if (msg === 'ยืนยันการจอง') {
+                    // ส่ง QR Code กลับไป
+                    await client.pushMessage(userId, {
+                        type: 'image',
+                        originalContentUrl: 'https://media.discordapp.net/attachments/1381902530426175498/1400383317504819292/IMG_3658.jpg?ex=688c7018&is=688b1e98&hm=741e0ca13e61210d4a71e604f11b56dcc55d900ac2ee1e1b8f7e2e0249998d09&=&format=webp&width=1182&height=1602',  // ใช้ลิงก์ HTTPS
+                        previewImageUrl: 'https://media.discordapp.net/attachments/1381902530426175498/1400383317504819292/IMG_3658.jpg?ex=688c7018&is=688b1e98&hm=741e0ca13e61210d4a71e604f11b56dcc55d900ac2ee1e1b8f7e2e0249998d09&=&format=webp&width=1182&height=1602'
+//                        originalContentUrl: 'https://drive.google.com/file/d/1YfNuvQ_rh5Kkb_GxNIznHpT84i9cadiK/view?usp=sharing',  // ใช้ลิงก์ HTTPS
+//                        previewImageUrl: 'https://drive.google.com/file/d/1YfNuvQ_rh5Kkb_GxNIznHpT84i9cadiK/view?usp=sharing'
+                    });
+
+                    await client.pushMessage(userId, {
+                        type: 'text',
+                        text: 'กรุณาสแกน QR Code เพื่อชำระเงิน',
+                    });
+                } else if (msg === 'ยกเลิกการจอง') {
+                    await client.pushMessage(userId, {
+                        type: 'text',
+                        text: 'การจองถูกยกเลิกเรียบร้อยแล้วครับ',
+                    });
+                } else if (msg.includes("ชื่อ")) {
+                    await client.pushMessage(userId, {
+                        type: 'flex',
+                        altText: '📋 สรุปรายการการจอง',
+                        contents: {
+                            type: 'bubble',
+                            body: {
+                                type: "box",
+                                layout: "vertical",
+                                spacing: "md",
+                                contents: [
+                                    {
+                                        type: "text",
+                                        text: "📋 สรุปรายการการจอง",
+                                        size: "xl",
+                                        weight: "bold",
+                                        wrap: true
+                                    },
+                                    {
+                                        type: "box",
+                                        layout: "baseline",
+                                        spacing: "sm",
+                                        contents: [
+                                            {
+                                                type: "text",
+                                                text: "ห้อง: Deluxe Sea View",
+                                                size: "sm",
+                                                color: "#555555"
+                                            },
+                                            {
+                                                type: "text",
+                                                text: "800 บาท / คืน * 2 คน",
+                                                size: "sm",
+                                                weight: "bold",
+                                                color: "#FFBF00"
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        type: "box",
+                                        layout: "baseline",
+                                        spacing: "sm",
+                                        contents: [
+                                            {
+                                                type: "text",
+                                                text: "จำนวนคืน",
+                                                size: "sm",
+                                                color: "#555555"
+                                            },
+                                            {
+                                                type: "text",
+                                                text: "1 คืน",
+                                                size: "sm",
+                                                weight: "bold",
+                                                color: "#FFBF00"
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        type: "box",
+                                        layout: "baseline",
+                                        spacing: "sm",
+                                        contents: [
+                                            {
+                                                type: "text",
+                                                text: "รวม",
+                                                size: "sm",
+                                                color: "#555555"
+                                            },
+                                            {
+                                                type: "text",
+                                                text: "1,600 บาท",
+                                                size: "sm",
+                                                weight: "bold",
+                                                color: "#FFBF00"
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        type: "text",
+                                        text: "🎉 ราคานี้รวมอาหารเช้า และ Wi-Fi ฟรี",
+                                        size: "sm",
+                                        color: "#666666",
+                                        wrap: true
+                                    },
+                                    {
+                                        type: "text",
+                                        text: "🎉 กชวรรณ kot@gmail.com",
+                                        size: "sm",
+                                        color: "#666666",
+                                        wrap: true
+                                    }
+                                ]
+                            },
+                            footer: {
+                                type: "box",
+                                layout: "vertical",
+                                spacing: "sm",
+                                contents: [
+                                    {
+                                        type: "button",
+                                        style: "primary",
+                                        color: "#000000",
+                                        action: {
+                                            type: 'message',
+                                            label: 'ยืนยัน',
+                                            text: 'ยืนยันการจอง',
+                                        },
+                                    },
+                                    {
+                                        type: "button",
+                                        action: {
+                                            type: 'message',
+                                            label: 'ยกเลิก',
+                                            text: 'ยกเลิกการจอง',
+                                        }
+                                    }
+                                ]
+                            }
+                        }
+                    });
+                } else if (msg.toLowerCase().includes('ห้อง')) {
+                    await client.pushMessage(userId, {
+                        type: 'text',
+                        text: 'จำนวนผู้เข้าพัก?',
+                        quickReply: {
+                            items: [
+                                {
+                                    type: 'action',
+                                    action: {
+                                        type: 'message',
+                                        label: '1 คน',
+                                        data: 'action=select_guest_quantity&guest=1',
+                                        text: '1 คน'
+                                    }
+                                },
+                                {
+                                    type: 'action',
+                                    action: {
+                                        type: 'message',
+                                        data: 'action=select_guest_quantity&guest=2',
+                                        label: '2 คน',
+                                        text: '2 คน'
+                                    }
+                                },
+                                {
+                                    type: 'action',
+                                    action: {
+                                        type: 'message',
+                                        data: 'action=select_guest_quantity&guest=3',
+                                        label: '3 คน',
+                                        text: '3 คน'
+                                    }
+                                },
+                                {
+                                    type: 'action',
+                                    action: {
+                                        type: 'message',
+                                        data: 'action=select_guest_quantity&guest=4',
+                                        label: '4 คน',
+                                        text: '4 คน'
+                                    }
+                                },
+                                {
+                                    type: 'action',
+                                    action: {
+                                        type: 'message',
+                                        data: 'action=select_guest_quantity&guest=5',
+                                        label: '5 คน',
+                                        text: '5 คน'
+                                    }
+                                },
+                                {
+                                    type: 'action',
+                                    action: {
+                                        type: 'message',
+                                        data: 'action=select_guest_quantity&guest=6',
+                                        label: '6 คน',
+                                        text: '6 คน'
+                                    }
+                                }
+                            ]
+                        }
+                    });
+                } else if (msg.includes("คุยกับโรงแรม")) {
+                    await client.pushMessage(userId, {
+                        type: 'flex',
+                        altText: '📋 ติดต่อโรงแรม',
+                        contents: {
+                            type: 'bubble',
+                            body: {
+                                type: "box",
+                                layout: "vertical",
+                                spacing: "md",
+                                contents: [
+                                    {
+                                        type: "text",
+                                        text: "📋 ติดต่อโรงแรม",
+                                        size: "xl",
+                                        weight: "bold",
+                                        wrap: true
+                                    },
+                                    {
+                                        type: "box",
+                                        layout: "baseline",
+                                        spacing: "sm",
+                                        contents: [
+                                            {
+                                                type: "text",
+                                                text: "กรุณารอสักครู่",
+                                                size: "sm",
+                                                color: "#555555"
+                                            },
+                                            {
+                                                type: "text",
+                                                text: "ทางโรงแรมกำลังตอบกลับข้อความ",
+                                                size: "sm",
+                                                weight: "bold",
+                                                color: "#FFBF00"
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        type: "box",
+                                        layout: "baseline",
+                                        spacing: "sm",
+                                        contents: [
+                                            {
+                                                type: "text",
+                                                text: "ขอบคุณที่ติดต่อเรา",
+                                                size: "sm",
+                                                color: "#555555"
+                                            },
+                                            {
+                                                type: "text",
+                                                text: "หากมีข้อสงสัยสามารถสอบถามได้ตลอด 24 ชั่วโมง",
+                                                size: "sm",
+                                                weight: "bold",
+                                                color: "#FFBF00"
+                                            }
+                                        ]
+                                    },
+
+ 
+                                ]
+                            }
+
+                        }
+                    });
+
+                } else if (msg.includes("ตำแหน่งที่พัก")) {
+                    await client.pushMessage(userId, {
+                        type: 'flex',
+                        altText: '📋 ตำแหน่งที่พัก',
+                        contents: {
+                            type: 'bubble',
+                            body: {
+                                type: "box",
+                                layout: "vertical",
+                                spacing: "md",
+                                contents: [
+                                    {
+                                        type: "text",
+                                        text: "📋 Checkin Plus",
+                                        size: "xl",
+                                        weight: "bold",
+                                        wrap: true
+                                    },
+                                    {
+                                        type: "box",
+                                        layout: "baseline",
+                                        spacing: "sm",
+                                        contents: [
+                                            {
+                                                type: "text",
+                                                text: "555 ตึกมาร์เช่ทองหล่อ",
+                                                size: "sm",
+                                                color: "#555555"
+                                            },
+                                            {
+                                                type: "text",
+                                                text: "ใกล้ BTS",
+                                                size: "sm",
+                                                weight: "bold",
+                                                color: "#FFBF00"
+                                            }
+                                        ]
+                                    },
+                                ]
+                            },
+                            footer: {
+                                type: "box",
+                                layout: "vertical",
+                                spacing: "sm",
+                                contents: [
+                                    {
+                                        type: "button",
+                                        style: "primary",
+                                        color: "#000000",
+                                        action: {
+                                            type: 'message',
+                                            label: 'ดูบนแผนที่',
+                                            text: 'ดูบนแผนที่',
+                                        },
+                                    },
+                                ]
+                            }
+                        }
+                    });
+                } else if (msg.includes("การจองของฉัน")) {
+                    await client.pushMessage(userId, {
+                        type: 'flex',
+                        altText: '📋 การจองของฉัน',
+                        contents: {
+                            type: 'bubble',
+                            body: {
+                                type: "box",
+                                layout: "vertical",
+                                spacing: "md",
+                                contents: [
+                                    {
+                                        type: "text",
+                                        text: "📋 การจองของฉัน",
+                                        size: "xl",
+                                        weight: "bold",
+                                        wrap: true
+                                    },
+                                    {
+                                        type: "box",
+                                        layout: "baseline",
+                                        spacing: "sm",
+                                        contents: [
+
+                                            {
+                                                type: "text",
+                                                text: "สถานะ :",
+                                                size: "sm",
+                                                color: "#555555"
+                                            },
+                                            {
+                                                type: "text",
+                                                text: "รอชำระเงิน",
+                                                size: "sm",
+                                                weight: "bold",
+                                                color: "#FFBF00"
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        type: "box",
+                                        layout: "baseline",
+                                        spacing: "sm",
+                                        contents: [
+
+                                            {
+                                                type: "text",
+                                                text: "ห้อง: Deluxe Sea View",
+                                                size: "sm",
+                                                color: "#555555"
+                                            },
+                                            {
+                                                type: "text",
+                                                text: "800 บาท / คืน * 2 คน",
+                                                size: "sm",
+                                                weight: "bold",
+                                                color: "#FFBF00"
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        type: "box",
+                                        layout: "baseline",
+                                        spacing: "sm",
+                                        contents: [
+                                            {
+                                                type: "text",
+                                                text: "จำนวนคืน",
+                                                size: "sm",
+                                                color: "#555555"
+                                            },
+                                            {
+                                                type: "text",
+                                                text: "1 คืน",
+                                                size: "sm",
+                                                weight: "bold",
+                                                color: "#FFBF00"
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        type: "box",
+                                        layout: "baseline",
+                                        spacing: "sm",
+                                        contents: [
+                                            {
+                                                type: "text",
+                                                text: "รวม",
+                                                size: "sm",
+                                                color: "#555555"
+                                            },
+                                            {
+                                                type: "text",
+                                                text: "1,600 บาท",
+                                                size: "sm",
+                                                weight: "bold",
+                                                color: "#FFBF00"
+                                            }
+                                        ]
+                                    },
+                                    {
+                                        type: "text",
+                                        text: "🎉 ราคานี้รวมอาหารเช้า และ Wi-Fi ฟรี",
+                                        size: "sm",
+                                        color: "#666666",
+                                        wrap: true
+                                    },
+                                    {
+                                        type: "text",
+                                        text: "🎉 กชวรรณ kot@gmail.com",
+                                        size: "sm",
+                                        color: "#666666",
+                                        wrap: true
+                                    }
+                                ]
+                            },
+                            footer: {
+                                type: "box",
+                                layout: "vertical",
+                                spacing: "sm",
+                                contents: [
+                                    {
+                                        type: "button",
+                                        style: "primary",
+                                        color: "#000000",
+                                        action: {
+                                            type: 'message',
+                                            label: 'ชำระเงิน',
+                                            text: 'ยืนยันการจอง',
+                                        },
+                                    },
+                                    {
+                                        type: "button",
+                                        action: {
+                                            type: 'uri',
+                                            label: 'ดูรายละเอียด',
+                                            uri: "https://example.com/hotel/the-serenity-resort"
+                                        }
+                                    }
+                                ]
+                            }
+                        }
+                    });
+                } else if (msg.includes("แชร์ประสบการณ์")) {
+                    await client.pushMessage(userId, {
+                        type: 'flex',
+                        altText: '📋 รีวิวที่พัก',
+                        contents: {
+                            type: 'bubble',
+                            body: {
+                                type: "box",
+                                layout: "vertical",
+                                spacing: "md",
+                                contents: [
+                                    {
+                                        type: "text",
+                                        text: "📋 ร่วมรีวิวกับเรา",
+                                        size: "xl",
+                                        weight: "bold",
+                                        wrap: true
+                                    },
+                                    {
+                                        type: "box",
+                                        layout: "baseline",
+                                        spacing: "sm",
+                                        contents: [
+                                            {
+                                                type: "text",
+                                                text: "ขอบคุณที่ร่วมรีวิว",
+                                                size: "sm",
+                                                color: "#555555"
+                                            },
+                                            {
+                                                type: "text",
+                                                text: "กับ Checkinplus",
+                                                size: "sm",
+                                                weight: "bold",
+                                                color: "#FFBF00"
+                                            }
+                                        ]
+                                    },
+                                ]
+                            },
+                            footer: {
+                                type: "box",
+                                layout: "vertical",
+                                spacing: "sm",
+                                contents: [
+                                    {
+                                        type: "button",
+                                        style: "primary",
+                                        color: "#000000",
+                                        action: {
+                                            type: 'message',
+                                            label: 'รีวิว',
+                                            text: 'รีวิว',
+                                        },
+                                    },
+                                ]
+                            }
+                        }
+                    });
+                } else if (msg.toLowerCase().includes('คน')){
+                    await client.pushMessage(userId, {
+                        type: 'text',
+                        text: 'กรุณากรอกข้อมูลผู้จองตามรูปแบบ:\nชื่อ: ...\nเบอร์โทร: ...\nemail: ...',
+                    });
+                } else if (msg.toLowerCase().includes('เลือก')){
+                    await client.pushMessage(userId, {
+                        type: 'text',
+                        text: 'กรุณากรอกข้อมูลผู้จองตามรูปแบบ:\nชื่อ: ...\nเบอร์โทร: ...\nemail: ...',
+                    });
+ //               } else {
+ //                   // ตอบกลับทั่วไป
+ //                   await client.replyMessage(event.replyToken, {
+ //                       type: 'text',
+ //                       text: 'คุณพิมพ์: ' + msg,
+ //                   });
+                }
+            }
+
+            // ถ้าเป็น postback (หลังเลือก datetime)
+            // ถ้าเป็น postback (หลังเลือก datetime)
+            if (event.type === 'postback') {
+                const data = event.postback.data;
+                const date = event.postback.params?.date;
+                console.log("data", event.postback.data)
+                if (data === 'action=checkin') {
+                    await client.pushMessage(userId, {
+                        type: 'text',
+                        text: `คุณเลือกวันที่เช็คอิน: ${date}\nกรุณาเลือกวันเช็คเอาท์ต่อ`,
+                    });
+
+                    // ส่งอีก datetime picker สำหรับ checkout
+                    await client.pushMessage(userId, {
+                        type: 'template',
+                        altText: 'เลือกวันที่เช็คเอาท์',
+                        template: {
+                            type: 'buttons',
+                            text: 'คุณต้องการเช็คเอาท์วันไหน?',
+                            actions: [
+                                {
+                                    type: 'datetimepicker',
+                                    label: 'เลือกวันที่',
+                                    data: 'action=checkout',
+                                    mode: 'date',
+                                }
+                            ]
+                        }
+                    });
+                } else if (data.includes('checkin_by_date')) {
+                    console.log("postback checkin_by_date")
+                    await client.pushMessage(userId, {
+                        type: 'text',
+                        text: `คุณเลือกวันที่เช็คอืน: ${date}\nขอบคุณสำหรับการจอง!`,
+                    });
+                    // ส่งอีก datetime picker สำหรับ checkout
+                    await client.pushMessage(userId, {
+                        type: 'template',
+                        altText: 'เลือกวันที่เช็คเอาท์',
+                        template: {
+                            type: 'buttons',
+                            text: 'คุณต้องการเช็คเอาท์วันไหน?',
+                            actions: [
+                                {
+                                    type: 'datetimepicker',
+                                    label: 'เลือกวันที่',
+                                    data: 'action=checkout_by_date',
+                                    mode: 'date',
+                                }
+                            ]
+                        }
+                    });
+                } else if (data==='action=checkout_by_date') {
+                    await client.pushMessage(userId, {
+                        type: 'text',
+                        text: `คุณเลือกวันที่เช็คเอาท์: ${date}\nขอบคุณสำหรับการจอง!`,
+                    });
+
+
+                    await client.pushMessage(userId, {
+                        type: 'text',
+                        text: 'จำนวนผู้เข้าพัก',
+                        quickReply: {
+                            items: [
+                                {
+                                    type: 'action',
+                                    action: {
+                                        type: 'postback',
+                                        label: '1 คน',
+                                        data: 'action=select_guest_quantity_flow_pick_date&guest=1',
+                                        displayText: '1 คน'
+                                    }
+                                },
+                                {
+                                    type: 'action',
+                                    action: {
+                                        type: 'postback',
+                                        data: 'action=select_guest_quantity_flow_pick_date&guest=2',
+                                        label: '2 คน',
+                                        displayText: '2 คน'
+                                    }
+                                },
+                                {
+                                    type: 'action',
+                                    action: {
+                                        type: 'postback',
+                                        data: 'action=select_guest_quantity_flow_pick_date&guest=3',
+                                        label: '3 คน',
+                                        displayText: '3 คน'
+                                    }
+                                },
+                                {
+                                    type: 'action',
+                                    action: {
+                                        type: 'postback',
+                                        data: 'action=select_guest_quantity_flow_pick_date&guest=4',
+                                        label: '4 คน',
+                                        displayText: '4 คน'
+                                    }
+                                },
+                                {
+                                    type: 'action',
+                                    action: {
+                                        type: 'postback',
+                                        data: 'action=select_guest_quantity_flow_pick_date&guest=5',
+                                        label: '5 คน',
+                                        displayText: '5 คน'
+                                    }
+                                },
+                                {
+                                    type: 'action',
+                                    action: {
+                                        type: 'postback',
+                                        data: 'action=select_guest_quantity_flow_pick_date&guest=6',
+                                        label: '6 คน',
+                                        displayText: '6 คน'
+                                    }
+                                }
+                            ]
+                        }
+                    });
+                } else if (data === 'action=checkout') {
+                    await client.pushMessage(userId, {
+                        type: 'text',
+                        text: `คุณเลือกวันที่เช็คเอาท์: ${date}\nขอบคุณสำหรับการจอง!`,
+                    });
+
+
+                    await client.pushMessage(userId, {
+                        type: 'text',
+                        text: 'คุณต้องการจองห้องแบบไหน?',
+                        quickReply: {
+                            items: [
+                                {
+                                    type: 'action',
+                                    action: {
+                                        type: 'postback',
+                                        label: '1 ห้อง',
+                                        data: 'action=select_room_quantity&room=1',
+                                        text: '1 ห้อง'
+                                    }
+                                },
+                                {
+                                    type: 'action',
+                                    action: {
+                                        type: 'postback',
+                                        data: 'action=select_room_quantity&room=2',
+                                        label: '2 ห้อง',
+                                        text: '2 ห้อง'
+                                    }
+                                },
+                                {
+                                    type: 'action',
+                                    action: {
+                                        type: 'postback',
+                                        data: 'action=select_room_quantity&room=3',
+                                        label: '3 ห้อง',
+                                        text: '3 ห้อง'
+                                    }
+                                },
+                                {
+                                    type: 'action',
+                                    action: {
+                                        type: 'postback',
+                                        data: 'action=select_room_quantity&room=4',
+                                        label: '4 ห้อง',
+                                        text: '4 ห้อง'
+                                    }
+                                },
+                                {
+                                    type: 'action',
+                                    action: {
+                                        type: 'postback',
+                                        data: 'action=select_room_quantity&room=5',
+                                        label: '5 ห้อง',
+                                        text: '5 ห้อง'
+                                    }
+                                },
+                                {
+                                    type: 'action',
+                                    action: {
+                                        type: 'postback',
+                                        data: 'action=select_room_quantity&room=6',
+                                        label: '6 ห้อง',
+                                        text: '6 ห้อง'
+                                    }
+                                }
+                            ]
+                        }
+                    });
+                }else if (data.includes("guest_information_flow_pick_date")) {
+                    await client.pushMessage(userId, {
+                        type: "flex",
+                        altText: "โรงแรมแนะนำ",
+                        contents: {
+                            type: "bubble",
+                            hero: {
+                            type: "image",
+                            url: "https://cdn.pixabay.com/photo/2016/11/29/04/17/architecture-1867187_1280.jpg", // รูปโรงแรมสวย ๆ
+                            size: "full",
+                            aspectRatio: "20:13",
+                            aspectMode: "cover"
+                            },
+                            body: {
+                            type: "box",
+                            layout: "vertical",
+                            spacing: "md",
+                            contents: [
+                                {
+                                type: "text",
+                                text: "The Serenity Resort",
+                                weight: "bold",
+                                size: "xl",
+                                wrap: true
+                                },
+                                {
+                                type: "text",
+                                text: "เริ่มต้น ฿3,200 / คืน",
+                                size: "lg",
+                                weight: "bold",
+                                color: "#FF6B6B"
+                                },
+                                {
+                                type: "text",
+                                text: "รีสอร์ทหรูริมทะเล บรรยากาศสงบ เหมาะสำหรับการพักผ่อน",
+                                size: "sm",
+                                color: "#666666",
+                                wrap: true
+                                }
+                            ]
+                            },
+                            footer: {
+                            type: "box",
+                            layout: "vertical",
+                            spacing: "sm",
+                            contents: [
+                                {
+                                type: "button",
+                                style: "secondary",
+                                action: {
+                                    type: "uri",
+                                    label: "ดูเพิ่มเติม",
+                                    uri: "https://example.com/hotel/the-serenity-resort"
+                                }
+                                },
+                                {
+                                type: "button",
+                                style: "primary",
+                                color: "#000000",
+                                action: {
+                                    type: "message",
+                                    label: "เลือก",
+                                    text: "เลือก"
+                                }
+                                }
+                            ]
+                            }
+                        }
+                        });
+                } else if (data.includes("action=select_guest_quantity_flow_pick_date")) {
+                    console.log("case", "select_guest_quantity_flow_pick_date")
+                    await client.pushMessage(userId, {
+                        type: 'text',
+                        text: 'ต้องการจองกี่ห้อง',
+                        quickReply: {
+                            items: [
+                                {
+                                    type: 'action',
+                                    action: {
+                                        type: 'postback',
+                                        label: '1 ห้อง',
+                                        data: 'action=select_room_quantity_flow_pick_date&room=1',
+                                        displayText: '1 ห้อง'
+                                    }
+                                },
+                                {
+                                    type: 'action',
+                                    action: {
+                                        type: 'postback',
+                                        data: 'action=select_room_quantity_flow_pick_date&room=2',
+                                        label: '2 ห้อง',
+                                        displayText: '2 ห้อง'
+                                    }
+                                },
+                                {
+                                    type: 'action',
+                                    action: {
+                                        type: 'postback',
+                                        data: 'action=select_room_quantity_flow_pick_date&room=3',
+                                        label: '3 ห้อง',
+                                        displayText: '3 ห้อง'
+                                    }
+                                },
+                                {
+                                    type: 'action',
+                                    action: {
+                                        type: 'postback',
+                                        data: 'action=select_room_quantity_flow_pick_date&room=4',
+                                        label: '4 ห้อง',
+                                        displayText: '4 ห้อง'
+                                    }
+                                },
+                                {
+                                    type: 'action',
+                                    action: {
+                                        type: 'postback',
+                                        data: 'action=select_room_quantity_flow_pick_date&room=5',
+                                        label: '5 ห้อง',
+                                        displayText: '5 ห้อง'
+                                    }
+                                },
+                                {
+                                    type: 'action',
+                                    action: {
+                                        type: 'postback',
+                                        data: 'action=select_room_quantity_flow_pick_date&room=6',
+                                        label: '6 ห้อง',
+                                        displayText: '6 ห้อง'
+                                    }
+                                }
+                            ]
+                        }
+                    });
+                } else if (data.includes("select_room_quantity_flow_pick_date")) {
+                    console.log("sendproductcard")
+                    await client.pushMessage(userId, {
+                        type: "flex",
+                        altText: "เลือกห้องพักที่คุณต้องการ",
+                        contents: {
+                            type: "carousel",
+                            contents: [
+                            {
+                                type: "bubble",
+                                hero: {
+                                type: "image",
+                                url: "https://media.discordapp.net/attachments/1381902530426175498/1402898204554428477/IMG_3059.png?ex=68959644&is=689444c4&hm=be4667840bbb47185da09f633e61826cf9aeb3e794a584b39fe2aef3c09fb4a0&=&format=webp&quality=lossless&width=1656&height=924",
+                                size: "full",
+                                aspectRatio: "20:13",
+                                aspectMode: "cover"
+                                },
+                                body: {
+                                type: "box",
+                                layout: "vertical",
+                                spacing: "md",
+                                contents: [
+                                    {
+                                    type: "text",
+                                    text: "The Serenity Resort",
+                                    weight: "bold",
+                                    size: "xl",
+                                    wrap: true
+                                    },
+                                    {
+                                    type: "text",
+                                    text: "เริ่มต้น ฿3,200 / คืน",
+                                    size: "lg",
+                                    weight: "bold",
+                                    color: "#FF6B6B"
+                                    },
+                                    {
+                                    type: "text",
+                                    text: "รีสอร์ทหรูริมทะเล บรรยากาศสงบ เหมาะสำหรับการพักผ่อน",
+                                    size: "sm",
+                                    color: "#666666",
+                                    wrap: true
+                                    }
+                                ]
+                                },
+                                footer: {
+                                type: "box",
+                                layout: "vertical",
+                                spacing: "sm",
+                                contents: [
+                                    {
+                                    type: "button",
+                                    style: "secondary",
+                                    action: {
+                                        type: "uri",
+                                        label: "ดูเพิ่มเติม",
+                                        uri: "https://example.com/hotel/the-serenity-resort"
+                                    }
+                                    },
+                                    {
+                                    type: "button",
+                                    style: "primary",
+                                    color: "#000000",
+                                    action: {
+                                        type: "message",
+                                        label: "เลือก",
+                                        text: "เลือก"
+                                    }
+                                    }
+                                ]
+                                }
+                            },
+                            {
+                                type: "bubble",
+                                hero: {
+                                type: "image",
+                                url: "https://media.discordapp.net/attachments/1381902530426175498/1402898204554428477/IMG_3059.png?ex=68959644&is=689444c4&hm=be4667840bbb47185da09f633e61826cf9aeb3e794a584b39fe2aef3c09fb4a0&=&format=webp&quality=lossless&width=1656&height=924",
+                                size: "full",
+                                aspectRatio: "20:13",
+                                aspectMode: "cover"
+                                },
+                                body: {
+                                type: "box",
+                                layout: "vertical",
+                                spacing: "md",
+                                contents: [
+                                    {
+                                    type: "text",
+                                    text: "Ocean Breeze Villa",
+                                    weight: "bold",
+                                    size: "xl",
+                                    wrap: true
+                                    },
+                                    {
+                                    type: "text",
+                                    text: "เริ่มต้น ฿4,500 / คืน",
+                                    size: "lg",
+                                    weight: "bold",
+                                    color: "#FF6B6B"
+                                    },
+                                    {
+                                    type: "text",
+                                    text: "วิลล่าริมชายหาดพร้อมวิวทะเลส่วนตัวและบริการระดับพรีเมียม",
+                                    size: "sm",
+                                    color: "#666666",
+                                    wrap: true
+                                    }
+                                ]
+                                },
+                                footer: {
+                                type: "box",
+                                layout: "vertical",
+                                spacing: "sm",
+                                contents: [
+                                    {
+                                    type: "button",
+                                    style: "secondary",
+                                    action: {
+                                        type: "uri",
+                                        label: "ดูเพิ่มเติม",
+                                        uri: "https://example.com/hotel/ocean-breeze-villa"
+                                    }
+                                    },
+                                    {
+                                    type: "button",
+                                    style: "primary",
+                                    color: "#000000",
+                                    action: {
+                                        type: "message",
+                                        label: "เลือก",
+                                        text: "เลือก"
+                                    }
+                                    }
+                                ]
+                                }
+                            }
+                            ]
+                        }
+                        });
+
+
+                //    await client.pushMessage(userId, {
+                //     type: 'template',
+                //     altText: 'กรุณากรอกข้อมูลผู้จอง',
+                //     template: {
+                //         type: 'buttons',
+                //         text: 'กรุณากรอกข้อมูลผู้จองตามรูปแบบ:\nชื่อ: ...\nเบอร์โทร: ...\nemail: ...',
+                //         actions: [
+                //         {
+                //             type: 'postback',
+                //             label: 'เริ่มกรอกข้อมูล',
+                //             data: 'action=guest_information_flow_pick_date'
+                //         }
+                //         ]
+                //     }
+                //     });
+                } else if (data.includes("select_room_quantity")) {
+                    await client.pushMessage(userId, {
+                        type: 'text',
+                        text: 'จำนวนผู้เข้าพัก?',
+                        quickReply: {
+                            items: [
+                                {
+                                    type: 'action',
+                                    action: {
+                                        type: 'message',
+                                        label: '1 คน',
+                                        data: 'action=select_guest_quantity&guest=1',
+                                        text: '1 คน'
+                                    }
+                                },
+                                {
+                                    type: 'action',
+                                    action: {
+                                        type: 'message',
+                                        data: 'action=select_guest_quantity&guest=2',
+                                        label: '2 คน',
+                                        text: '2 คน'
+                                    }
+                                },
+                                {
+                                    type: 'action',
+                                    action: {
+                                        type: 'message',
+                                        data: 'action=select_guest_quantity&guest=3',
+                                        label: '3 คน',
+                                        text: '3 คน'
+                                    }
+                                },
+                                {
+                                    type: 'action',
+                                    action: {
+                                        type: 'message',
+                                        data: 'action=select_guest_quantity&guest=4',
+                                        label: '4 คน',
+                                        text: '4 คน'
+                                    }
+                                },
+                                {
+                                    type: 'action',
+                                    action: {
+                                        type: 'message',
+                                        data: 'action=select_guest_quantity&guest=5',
+                                        label: '5 คน',
+                                        text: '5 คน'
+                                    }
+                                },
+                                {
+                                    type: 'action',
+                                    action: {
+                                        type: 'message',
+                                        data: 'action=select_guest_quantity&guest=6',
+                                        label: '6 คน',
+                                        text: '6 คน'
+                                    }
+                                }
+                            ]
+                        }
+                    });
+                }   else if (data.startsWith("select_guest_quantity")) {
+                    await client.pushMessage(userId, {
+                        type: 'text',
+                        text: 'กรุณากรอกข้อมูลผู้จองตามรูปแบบ:\nชื่อ: ...\nเบอร์โทร: ...\nemail: ...',
+                    });
+                }
+            }
+           if (event.type === 'message' && event.message.type === 'text') {
+                const msg = event.message.text;
+
+                if (msg.toLowerCase().includes('คุยกับโรงแรม')) {
+                   
+                   const reply = {
+                        type: 'templet',
+                        altText: 'คุยกับโรงแรม',
+                        template: {
+                            type: 'action',
+                            text: 'กรุณารอสักครู่ ทางโรงแรมกำลังตอบข้อความ',
+                            action: [
+                                {
+                                    type: 'message',
+                                    label : 'ติดต่อโรงแรม',
+                                    text : 'ติดต่อโรงแรม',
+                                }
+                            ]
+                        }
+                    };
+                    await client.replyMessage(event.replyToken, reply);
+                
+                } else if (msg.toLowerCase().includes('คุยกับโรงแรม2')) {
+                    await client.pushMessage(userId, {
+                        type: 'text',
+                        text: 'อิอิ',
+                    });
+                }
+            }         
+
+        }
+        res.status(200).send('OK');
+    } catch (error) {
+        res.status(200).send('OK');
+    }
+});
+
+// ฟังที่พอร์ตที่กำหนด
+app.listen(port, () => {
+    console.log(`Server running at http://localhost:${port}`);
+});
